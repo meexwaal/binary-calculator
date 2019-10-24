@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+if command -v rlwrap > /dev/null
+then
+    rlwrap ./binary_calc.py
+else
+    echo "Install rlwrap to support arrow keys in binary_calc"
+    ./binary_calc.py
+fi
