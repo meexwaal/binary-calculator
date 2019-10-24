@@ -4,20 +4,45 @@ from pyparsing import (Literal, CaselessLiteral, Word, Combine, Group, Optional,
                        ZeroOrMore, Forward, nums, alphas, oneOf)
 import math
 import operator
+import struct
 
+# Returns the tuple (sign, mag) where sign is either '-' or '' and mag is abs(v)
+def split_sign(v):
+    return ('-' if v < 0 else '', abs(v))
+
+# Get the IEEE bit representation of a float
+# Copied from https://stackoverflow.com/a/14431225/5135869
+def float_to_bits(f):
+    s = struct.pack('>f', f)
+    return struct.unpack('>L', s)[0]
+
+# Convert a float to its IEEE representation as a binary string
+def ieee_bin(f):
+    bits = float_to_bits(f)
+    bitstr = bin(bits)[2:].zfill(32)
+
+    return f"{bitstr[0]}_{bitstr[1:9]}_{bitstr[9:32]}"
+
+# float_to_bin - convert a float to a binary string representation
+# float_to_hex - convert a float to a hexidecimal string representation
 # Mostly copied from
 # https://rosettacode.org/wiki/Decimal_floating_point_number_to_binary
 hex2bin = dict('{:x} {:04b}'.format(x,x).split() for x in range(16))
-def float_dec2bin(d):
-    neg = False
-    if d < 0:
-        d = -d
-        neg = True
-    hx = float(d).hex()
+def float_to_bin(d):
+    (sign, mag) = split_sign(d)
+    hx = float(mag).hex()
     p = hx.index('p')
     bn = ''.join(hex2bin.get(char, char) for char in hx[2:p])
-    return ('-' if neg else '') + bn.strip('0') + hx[p:p+2] + hx[p+2:]
+    return sign + '0b' + bn.strip('0') + hx[p:p+2] + hx[p+2:]
 
+def float_to_hex(d):
+    (sign, mag) = split_sign(d)
+    hx = float(mag).hex()
+    p = hx.index('p')
+    bn = hx[2:p]
+    return sign + '0x' + bn.strip('0') + hx[p:p+2] + hx[p+2:]
+
+# Class for parsing and evaluating a numeric expression
 # Mostly copied from https://stackoverflow.com/a/2371789/5135869
 class NumericStringParser(object):
     '''
@@ -120,11 +145,41 @@ class NumericStringParser(object):
             return self.parse_num(op)
 
     def eval(self, num_string, parseAll=True):
-        if num_string[0] == '/':
+        if len(num_string) == 0:
+            return None
+        elif num_string[0] == '/':
             # Command
             cmd = num_string[1:].split(' ')
             if cmd[0] == "set":
                 self.config[cmd[1]] = int(cmd[2])
+                return None
+            elif cmd[0] == "help" or cmd[0] == '?':
+                print(f"""
+Binary Calculator
+
+Press C-d to to quit
+Default base is currently base {self.config['base']}
+All numbers with no base prefix will be interpreted in that base
+
+Prefix a number with:
+  0b for base 2
+  0o for base 8
+  0d for base 10
+  0x or 0h for base 16
+
+Available commands:
+  /set <parameter> <value> : Set configuration <parameter> to <value>
+  /help or /?              : Display this message
+  /quit or /exit           : Quit or exit
+
+Current parameters:""")
+                for key in self.config:
+                    print(f"  {key} \t: {self.config[key]}")
+
+                print("")
+                return None
+            elif cmd[0] == "quit" or cmd[0] == "exit":
+                quit() or exit() # :-P
             else:
                 print("Invalid command")
                 return None
@@ -145,6 +200,9 @@ class NumericStringParser(object):
         if prefix == "0b":
             base = 2
             op = suffix_val
+        if prefix == "0o":
+            base = 8
+            op = suffix_val
         elif prefix == "0d":
             base = 10
             op = suffix_val
@@ -155,7 +213,7 @@ class NumericStringParser(object):
         if '.' in op:
             [ipart, fpart] = op.split('.')
             ival = 0 if len(ipart) == 0 else int(ipart, base)
-            fval = int(fpart, base)
+            fval = 0 if len(fpart) == 0 else int(fpart, base)
             result = ival + fval / base**len(fpart)
         else:
             result = int(op, base)
@@ -163,12 +221,22 @@ class NumericStringParser(object):
         return result
 
 
+print("Type /help for usage")
 nsp = NumericStringParser()
 
 # REPL loop
 while True:
     # Read
-    c = input(f"B{nsp.config['base']} > ")
+    try:
+        c = input(f"B{nsp.config['base']} > ")
+    except EOFError:
+        # C-d quits
+        print("")
+        break
+    except KeyboardInterrupt:
+        # C-c cancels the current command and opens a new line
+        print("")
+        continue
 
     # Evaluate
     result = nsp.eval(c)
@@ -176,4 +244,13 @@ while True:
         continue
 
     # Print
-    print(f"\t{result}\t{float_dec2bin(result)}")
+    # For ints:   print in binary, decimal, and hex
+    # For floats: print in bin frac, dec frac, and hex float
+    if int(result) == result:
+        result = int(result)
+        # Print ints
+        print(f"\t{bin(result)}\t0d{result}\t{hex(result)}")
+    else:
+        # Print floats
+        (sign, mag) = split_sign(result)
+        print(f"\t{float_to_bin(result)}\t{sign}0d{mag}\t{float_to_hex(result)}\tIEEE:{ieee_bin(result)}")
