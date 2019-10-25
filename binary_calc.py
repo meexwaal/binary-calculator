@@ -65,14 +65,14 @@ class NumericStringParser(object):
 
     # Same, man
     def get_help(self):
-        return f"""
+        help_text = f"""
 Binary Calculator
 
 Press C-d to to quit
 Default base is currently base {self.config['base']}
 All numbers with no base prefix will be interpreted in that base
 Set width to some constant to perform two's complement arithmetic in that width
-Set width to inf to perform arithmetic in arbitrary (python) precision
+Set width to inf to perform arithmetic in arbitrary (Python) precision
 
 Prefix a number with:
   0b for base 2
@@ -85,7 +85,11 @@ Available commands:
   /help or /?              : Display this message
   /quit or /exit           : Quit or exit
 
-Current parameters:"""
+Current parameters:
+"""
+        for key in self.config:
+            help_text += f"  {key}\t: {self.config[key]}\n"
+        return help_text
 
     def pushFirst(self, strg, loc, toks):
         self.exprStack.append(toks[0])
@@ -223,10 +227,6 @@ Current parameters:"""
                 return None
             elif cmd[0] == "help" or cmd[0] == '?':
                 print(self.get_help())
-                for key in self.config:
-                    print(f"  {key}\t: {self.config[key]}")
-
-                print("")
                 return None
             elif cmd[0] == "quit" or cmd[0] == "exit":
                 quit() or exit() # :-P
