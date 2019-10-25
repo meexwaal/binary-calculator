@@ -42,6 +42,10 @@ def float_to_hex(d):
     bn = hx[2:p]
     return sign + '0x' + bn.strip('0') + hx[p:p+2] + hx[p+2:]
 
+# Custom exception
+class FloatToTwosComp(Exception):
+    pass
+
 # Class for parsing and evaluating a numeric expression
 # Mostly copied from https://stackoverflow.com/a/2371789/5135869
 class NumericStringParser(object):
@@ -49,6 +53,39 @@ class NumericStringParser(object):
     Most of this code comes from the fourFn.py pyparsing example
 
     '''
+
+    # Clamp a value to two's complement for the current bit width
+    def clamp_tc(self, v):
+        if self.config["width"] < float("inf"):
+            if int(v) != v:
+                raise FloatToTwosComp
+            return v % (2**self.config["width"])
+        else:
+            return v
+
+    # Same, man
+    def get_help(self):
+        return f"""
+Binary Calculator
+
+Press C-d to to quit
+Default base is currently base {self.config['base']}
+All numbers with no base prefix will be interpreted in that base
+Set width to some constant to perform two's complement arithmetic in that width
+Set width to inf to perform arithmetic in arbitrary (python) precision
+
+Prefix a number with:
+  0b for base 2
+  0o for base 8
+  0d for base 10
+  0x or 0h for base 16
+
+Available commands:
+  /set <parameter> <value> : Set configuration <parameter> to <value>
+  /help or /?              : Display this message
+  /quit or /exit           : Quit or exit
+
+Current parameters:"""
 
     def pushFirst(self, strg, loc, toks):
         self.exprStack.append(toks[0])
@@ -59,7 +96,8 @@ class NumericStringParser(object):
 
     def __init__(self):
         self.config = {
-            "base": 2
+            "base" : 2,
+            "width" : float("inf")
         }
 
         """
@@ -78,7 +116,7 @@ class NumericStringParser(object):
         # fnumber = Combine(Word("+-" + nums, nums) +
         #                   Optional(point + Optional(Word(nums))) +
         #                   Optional(e + Word("+-" + nums, nums)))
-        fnumber = Word("+-." + nums + alphas)
+        fnumber = Word("+-." + nums + alphas, "." + nums + alphas)
         ident = Word(alphas, alphas + nums + "_$")
         plus = Literal("+")
         minus = Literal("-")
@@ -128,20 +166,47 @@ class NumericStringParser(object):
     def evaluateStack(self, s):
         op = s.pop()
         if op == 'unary -':
-            return -self.evaluateStack(s)
-        if op in "+-*/^":
+            return self.clamp_tc(-self.evaluateStack(s))
+
+        elif op in "+-*":
+            # Perform 2's comp clamping after the op
             op2 = self.evaluateStack(s)
             op1 = self.evaluateStack(s)
-            return self.opn[op](op1, op2)
+            return self.clamp_tc(self.opn[op](op1, op2))
+
+        elif op in "/":
+            # Perform 2's comp clamping before and after the op,
+            # and round down after doing the division
+            op2 = self.clamp_tc(self.evaluateStack(s))
+            op1 = self.clamp_tc(self.evaluateStack(s))
+            result = self.opn[op](op1, op2)
+            if self.config["width"] < float("inf"):
+                return self.clamp_tc(int(result))
+            else:
+                return result
+
+        elif op in "^":
+            op2 = self.evaluateStack(s) # Don't make the exponent 2's comp
+            # (but if it's not a literal, the op will force it to 2's comp)
+            op1 = self.clamp_tc(self.evaluateStack(s))
+            return self.clamp_tc(self.opn[op](op1, op2))
+
         elif op == "PI":
             return math.pi  # 3.1415926535
+
         elif op == "E":
             return math.e  # 2.718281828
+
         elif op in self.fn:
             return self.fn[op](self.evaluateStack(s))
+
         # elif op[0].isalpha():
         #     return 0
+
         else:
+            # Don't convert literals to 2's comp right away because there are
+            # some cases where we want the non-Two's comp (like exponents)
+            # This means we do have to clamp at the Very end
             return self.parse_num(op)
 
     def eval(self, num_string, parseAll=True):
@@ -151,30 +216,15 @@ class NumericStringParser(object):
             # Command
             cmd = num_string[1:].split(' ')
             if cmd[0] == "set":
-                self.config[cmd[1]] = int(cmd[2])
+                if cmd[2] == "inf":
+                    self.config[cmd[1]] = float("inf")
+                else:
+                    self.config[cmd[1]] = int(cmd[2])
                 return None
             elif cmd[0] == "help" or cmd[0] == '?':
-                print(f"""
-Binary Calculator
-
-Press C-d to to quit
-Default base is currently base {self.config['base']}
-All numbers with no base prefix will be interpreted in that base
-
-Prefix a number with:
-  0b for base 2
-  0o for base 8
-  0d for base 10
-  0x or 0h for base 16
-
-Available commands:
-  /set <parameter> <value> : Set configuration <parameter> to <value>
-  /help or /?              : Display this message
-  /quit or /exit           : Quit or exit
-
-Current parameters:""")
+                print(self.get_help())
                 for key in self.config:
-                    print(f"  {key} \t: {self.config[key]}")
+                    print(f"  {key}\t: {self.config[key]}")
 
                 print("")
                 return None
@@ -187,7 +237,7 @@ Current parameters:""")
             # Expression
             self.exprStack = []
             results = self.bnf.parseString(num_string, parseAll)
-            val = self.evaluateStack(self.exprStack[:])
+            val = self.clamp_tc(self.evaluateStack(self.exprStack[:]))
             return val
 
     # Custom method for parsing numbers in other bases
@@ -249,7 +299,13 @@ while True:
     if int(result) == result:
         result = int(result)
         # Print ints
-        print(f"\t{bin(result)}\t0d{result}\t{hex(result)}")
+        (sign, mag) = split_sign(result)
+        print(f"\t{bin(result)}\t{sign}0d{mag}\t{hex(result)}")
+
+        # And print negatives when we're dealing with fixed precision
+        if (nsp.config["width"] < float("inf")):
+            neg = nsp.clamp_tc(-result)
+            print(f"\t-{bin(neg)}\t-0d{neg}\t-{hex(neg)}")
     else:
         # Print floats
         (sign, mag) = split_sign(result)
