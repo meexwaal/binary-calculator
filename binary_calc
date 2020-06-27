@@ -1,9 +1,11 @@
 #!/usr/bin/env sh
 
+DIR=$(dirname $(readlink -f $0))
+
 if command -v rlwrap > /dev/null
 then
-    rlwrap ./binary_calc.py
+    rlwrap $DIR/binary_calc.py
 else
     echo "Install rlwrap to support arrow keys in binary_calc"
-    ./binary_calc.py
+    $DIR/binary_calc.py
 fi

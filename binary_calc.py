@@ -23,6 +23,12 @@ def ieee_bin(f):
 
     return f"{bitstr[0]}_{bitstr[1:9]}_{bitstr[9:32]}"
 
+# Convert a float to its IEEE representation as a hex string
+def ieee_hex(f):
+    bits = float_to_bits(f)
+
+    return hex(bits)
+
 # float_to_bin - convert a float to a binary string representation
 # float_to_hex - convert a float to a hexidecimal string representation
 # Mostly copied from
@@ -309,4 +315,4 @@ while True:
     else:
         # Print floats
         (sign, mag) = split_sign(result)
-        print(f"\t{float_to_bin(result)}\t{sign}0d{mag}\t{float_to_hex(result)}\tIEEE:{ieee_bin(result)}")
+        print(f"\t{float_to_bin(result)}\t{sign}0d{mag}\t{float_to_hex(result)}\tIEEE:{ieee_bin(result)}, {ieee_hex(result)}")
