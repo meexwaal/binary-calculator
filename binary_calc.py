@@ -295,7 +295,12 @@ while True:
         continue
 
     # Evaluate
-    result = nsp.eval(c)
+    try:
+        result = nsp.eval(c)
+    except ValueError as err:
+        print(err)
+        continue
+
     if result is None:
         continue
 
